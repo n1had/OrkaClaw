@@ -1,0 +1,3 @@
+[submodule "backend/orka_agents"]
+	path = backend/orka_agents
+	url = https://github.com/n1had/OrkaAgents

@@ -1,0 +1,57 @@
+{
+  "m1": {
+    "f1": {
+      "name": "M1 Faza 1 — Istraživanje i klasifikacija",
+      "spec": "orka_agents/agents/m1_f1_agent.md",
+      "references": [
+        "orka_agents/reference/m1_f1_workflow.md",
+        "orka_agents/reference/m1_f1_kombinacijska_mapa.md"
+      ],
+      "inputs": [
+        {
+          "name": "company_name",
+          "label": "Naziv kompanije",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "website",
+          "label": "Website",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "channel",
+          "label": "Kanal akvizicije",
+          "type": "select",
+          "required": false,
+          "options": ["Lista kompanija", "Direktni ulaz", "CRM", "Konferencija"]
+        },
+        {
+          "name": "notes",
+          "label": "Napomene",
+          "type": "textarea",
+          "required": false
+        }
+      ],
+      "output_file": "m1_f1_forma3.md"
+    },
+    "f2": {
+      "name": "M1 Faza 2 — Inicijalni kontakt",
+      "spec": "orka_agents/agents/m1_f2_agent.md",
+      "references": [
+        "orka_agents/reference/m1_f2_workflow.md",
+        "orka_agents/reference/m1_f2_outreach_playbook.md"
+      ],
+      "inputs": [
+        {
+          "name": "forma3",
+          "label": "Forma 3 (output agenta F1)",
+          "type": "textarea",
+          "required": true
+        }
+      ],
+      "output_file": "m1_f2_log.md"
+    }
+  }
+}
