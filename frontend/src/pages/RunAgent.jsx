@@ -53,6 +53,14 @@ export default function RunAgent({ user }) {
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
 
+  // Pause / multi-turn state
+  const [paused, setPaused] = useState(false)
+  const [pauseInput, setPauseInput] = useState('')
+  const [convMessages, setConvMessages] = useState([])
+  const [convId, setConvId] = useState('')
+
+  // Track text accumulated in the current streaming turn (for conversation history)
+  const currentTurnTextRef = useRef('')
   const readerRef = useRef(null)
 
   // Fetch registry on mount
@@ -82,62 +90,123 @@ export default function RunAgent({ user }) {
     )
   }
 
+  // ── Shared SSE stream reader ───────────────────────────────────────────────
+  // Handles both initial and continuation requests.  Returns when stream closes.
+
+  async function _streamFromBody(body) {
+    const response = await fetch(`/run/${selectedStream}/${selectedFaza}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      // Any 401 means the session or MS token has expired — send to login
+      if (response.status === 401) {
+        window.location.href = '/auth/login'
+        return
+      }
+      const err = await response.json().catch(() => ({}))
+      setError(err.detail || `Greška ${response.status}`)
+      setRunning(false)
+      return
+    }
+
+    const reader = response.body.getReader()
+    readerRef.current = reader
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done: streamDone, value } = await reader.read()
+      if (streamDone) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      // Process all complete SSE lines from the buffer
+      const lines = buffer.split('\n')
+      buffer = lines.pop() // keep any incomplete trailing line
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const data = line.slice(6)
+        if (data === '[DONE]') {
+          setDone(true)
+          continue
+        }
+        try {
+          const chunk = JSON.parse(data)
+          if (typeof chunk === 'string') {
+            // Regular text chunk
+            setOutput((prev) => prev + chunk)
+            currentTurnTextRef.current += chunk
+          } else if (chunk?.type === 'init') {
+            // Initial run: store user message + conversation ID for continuation
+            setConvMessages([{ role: 'user', content: chunk.user_message }])
+            setConvId(chunk.conversation_id)
+          } else if (chunk?.pause) {
+            // PAUSE signal: finalise this turn in history, show reply input
+            setConvMessages((prev) => [
+              ...prev,
+              { role: 'assistant', content: currentTurnTextRef.current },
+            ])
+            currentTurnTextRef.current = ''
+            setPaused(true)
+          } else if (chunk?.error) {
+            setError(chunk.error)
+          }
+        } catch {
+          // ignore malformed chunks
+        }
+      }
+    }
+  }
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
   async function handleRun() {
     if (missingRequired()) return
     setOutput('')
     setDone(false)
     setError('')
+    setPaused(false)
+    setPauseInput('')
+    setConvMessages([])
+    setConvId('')
+    currentTurnTextRef.current = ''
     setRunning(true)
 
     try {
-      const response = await fetch(`/run/${selectedStream}/${selectedFaza}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ ...inputs, model: selectedModel }),
+      await _streamFromBody({ ...inputs, model: selectedModel })
+    } catch (e) {
+      if (e.name !== 'AbortError') setError(e.message)
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  async function handleContinue() {
+    if (!pauseInput.trim()) return
+
+    // Append the user's reply to the existing conversation history
+    const updatedMessages = [
+      ...convMessages,
+      { role: 'user', content: pauseInput },
+    ]
+
+    setPaused(false)
+    setPauseInput('')
+    currentTurnTextRef.current = ''
+    setRunning(true)
+    setError('')
+
+    try {
+      await _streamFromBody({
+        model: selectedModel,
+        conversation_id: convId,
+        messages: updatedMessages,
       })
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        setError(err.detail || `Greška ${response.status}`)
-        setRunning(false)
-        return
-      }
-
-      const reader = response.body.getReader()
-      readerRef.current = reader
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done: streamDone, value } = await reader.read()
-        if (streamDone) break
-
-        buffer += decoder.decode(value, { stream: true })
-
-        // Process all complete SSE lines from the buffer
-        const lines = buffer.split('\n')
-        buffer = lines.pop() // keep any incomplete trailing line
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const data = line.slice(6)
-          if (data === '[DONE]') {
-            setDone(true)
-            continue
-          }
-          try {
-            const chunk = JSON.parse(data)
-            if (typeof chunk === 'string') {
-              setOutput((prev) => prev + chunk)
-            } else if (chunk?.error) {
-              setError(chunk.error)
-            }
-          } catch {
-            // ignore malformed chunks
-          }
-        }
-      }
     } catch (e) {
       if (e.name !== 'AbortError') setError(e.message)
     } finally {
@@ -159,6 +228,7 @@ export default function RunAgent({ user }) {
   function handleStop() {
     readerRef.current?.cancel()
     setRunning(false)
+    setPaused(false)
   }
 
   const canRun = agentConfig && !running && !missingRequired()
@@ -257,7 +327,7 @@ export default function RunAgent({ user }) {
 
         {/* ── Right panel: output ── */}
         <div className="output-panel">
-          {output || running ? (
+          {output || running || paused ? (
             <>
               <div className="output-toolbar">
                 <h2>
@@ -265,6 +335,11 @@ export default function RunAgent({ user }) {
                     <>
                       <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2, display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }} />
                       Agent radi…
+                    </>
+                  ) : paused ? (
+                    <>
+                      <span style={{ marginRight: 6 }}>⏸</span>
+                      Čeka na odgovor
                     </>
                   ) : (
                     'Output'
@@ -276,7 +351,44 @@ export default function RunAgent({ user }) {
                   </button>
                 )}
               </div>
+
               <OutputViewer content={output} streaming={running} />
+
+              {/* PAUSE reply area — shown when agent is waiting for user input */}
+              {paused && (
+                <div className="pause-input-area">
+                  <div className="pause-label">Agent čeka vaš odgovor</div>
+                  <textarea
+                    className="pause-textarea"
+                    value={pauseInput}
+                    onChange={(e) => setPauseInput(e.target.value)}
+                    placeholder="Unesite odgovor i pritisnite Nastavi (ili Ctrl+Enter)…"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault()
+                        handleContinue()
+                      }
+                    }}
+                    autoFocus
+                    rows={4}
+                  />
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={handleStop}
+                    >
+                      Odustani
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleContinue}
+                      disabled={!pauseInput.trim()}
+                    >
+                      Nastavi →
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="output-empty">

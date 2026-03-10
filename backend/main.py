@@ -1,4 +1,5 @@
 import json
+import uuid as _uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -7,8 +8,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from agents import get_agent_config, load_registry, stream_agent
-from auth import get_current_user, router as auth_router
+from agents import (
+    get_agent_config,
+    load_registry,
+    prepare_initial_messages,
+    stream_agent,
+)
+from auth import (
+    get_current_user,
+    is_ms_token_expired,
+    reissue_session_cookie,
+    try_refresh_ms_token,
+    router as auth_router,
+)
 from config import settings
 from database import SessionLocal, init_db
 from models import Run
@@ -66,6 +78,43 @@ def get_registry():
     return load_registry()
 
 
+# ── PAUSE detection helpers ───────────────────────────────────────────────────
+
+_PAUSE_MARKER = "[PAUSE]"
+_PAUSE_LEN = len(_PAUSE_MARKER)
+
+# In-memory store for multi-turn PAUSE runs.
+# conv_id → {stream, faza, user_email, user_name, agent_name, inputs_json, output_so_far}
+# TODO: add TTL-based cleanup to prevent unbounded memory growth.
+_pending_runs: dict[str, dict] = {}
+
+
+def _split_on_pause(buffer: str) -> tuple[str, bool, str]:
+    """Scan buffer for the [PAUSE] control marker.
+
+    Returns (safe_text, pause_found, new_buffer):
+      - safe_text   : text that is safe to emit right now
+      - pause_found : True when [PAUSE] was detected inside safe_text's tail
+      - new_buffer  : remaining text to prepend to the next incoming chunk
+    """
+    idx = buffer.find(_PAUSE_MARKER)
+    if idx != -1:
+        # Emit everything before the marker; discard the marker itself.
+        # Text after the marker is dropped (agent shouldn't generate past PAUSE).
+        return buffer[:idx], True, ""
+
+    # No complete marker found yet.  Hold back up to PAUSE_LEN-1 trailing
+    # characters in case the marker is split across chunk boundaries.
+    hold = 0
+    for i in range(_PAUSE_LEN - 1, 0, -1):
+        if buffer.endswith(_PAUSE_MARKER[:i]):
+            hold = i
+            break
+    return buffer[: len(buffer) - hold], False, buffer[len(buffer) - hold :]
+
+
+# ── Run endpoint ──────────────────────────────────────────────────────────────
+
 @app.post("/run/{stream}/{faza}")
 async def run_agent(
     stream: str,
@@ -73,53 +122,164 @@ async def run_agent(
     body: dict = Body(default={}),
     current_user: dict = Depends(get_current_user),
 ):
-    """Stream agent output as Server-Sent Events. Saves completed run to DB."""
-    try:
-        config = get_agent_config(stream, faza)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    """Stream agent output as Server-Sent Events.
 
-    # Extract optional model override; the rest of the body is form inputs
+    Supports multi-turn PAUSE/continue conversations:
+      - Initial run:      body contains form inputs (+ optional model override)
+      - Continuation run: body contains {model, conversation_id, messages: [...]}
+    """
+    # ── Extract special fields ────────────────────────────────────────────────
     model: str | None = body.get("model") or None
-    inputs = {k: v for k, v in body.items() if k != "model"}
+    conv_id_from_client: str | None = body.get("conversation_id")
+    messages_from_client: list[dict] | None = body.get("messages")
+    # Remaining keys are the agent's form inputs (empty for continuation runs)
+    inputs = {
+        k: v
+        for k, v in body.items()
+        if k not in ("model", "conversation_id", "messages")
+    }
 
+    # ── Validate ──────────────────────────────────────────────────────────────
+    if not messages_from_client:
+        # Initial run — verify the agent exists
+        try:
+            get_agent_config(stream, faza)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+    else:
+        # Continuation — conversation_id must reference a live pending run
+        if not conv_id_from_client or conv_id_from_client not in _pending_runs:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid or expired conversation_id. Start a new run.",
+            )
+
+    # ── MS token refresh ──────────────────────────────────────────────────────
     microsoft_token = current_user.get("ms_access_token", "")
+    refreshed_tokens: dict | None = None
+
+    if microsoft_token and is_ms_token_expired(current_user):
+        refreshed_tokens = try_refresh_ms_token(current_user.get("home_account_id", ""))
+        if refreshed_tokens:
+            microsoft_token = refreshed_tokens["access_token"]
+        else:
+            raise HTTPException(status_code=401, detail="ms_token_expired")
+
+    # ── SSE generator ─────────────────────────────────────────────────────────
 
     async def event_stream():
-        chunks: list[str] = []
+        turn_chunks: list[str] = []
         error_occurred = False
+        active_conv_id = conv_id_from_client  # may be reassigned for new runs
 
         try:
-            async for chunk in stream_agent(stream, faza, inputs, microsoft_token, model):
-                chunks.append(chunk)
-                yield f"data: {json.dumps(chunk)}\n\n"
+            # ── Build or receive conversation messages ────────────────────────
+            if not messages_from_client:
+                # Initial run: fetch CRM context, build first user message
+                agent_config, messages = await prepare_initial_messages(
+                    stream, faza, inputs, microsoft_token
+                )
+                active_conv_id = str(_uuid.uuid4())
+                _pending_runs[active_conv_id] = {
+                    "stream": stream,
+                    "faza": faza,
+                    "user_email": current_user["email"],
+                    "user_name": current_user["name"],
+                    "agent_name": agent_config.get("name", f"{stream}/{faza}"),
+                    "inputs_json": json.dumps(inputs),
+                    "output_so_far": "",
+                }
+                # Emit init event so the frontend can track the conversation
+                yield (
+                    f"data: {json.dumps({'type': 'init', 'conversation_id': active_conv_id, 'user_message': messages[0]['content']})}\n\n"
+                )
+            else:
+                # Continuation run: use messages provided by the frontend
+                messages = messages_from_client
+
+            # ── Stream with PAUSE detection ───────────────────────────────────
+            buffer = ""
+            paused = False
+
+            async for chunk in stream_agent(stream, faza, messages, model):
+                buffer += chunk
+                safe_text, pause_found, buffer = _split_on_pause(buffer)
+
+                if safe_text:
+                    turn_chunks.append(safe_text)
+                    yield f"data: {json.dumps(safe_text)}\n\n"
+
+                if pause_found:
+                    paused = True
+                    break  # Stop consuming; discard any text generated past [PAUSE]
+
+            # Flush held-back buffer tail (only when not paused)
+            if buffer and not paused:
+                turn_chunks.append(buffer)
+                yield f"data: {json.dumps(buffer)}\n\n"
+
+            if paused:
+                # Accumulate this turn's output for eventual DB save
+                if active_conv_id and active_conv_id in _pending_runs:
+                    _pending_runs[active_conv_id]["output_so_far"] += "".join(turn_chunks)
+                yield 'data: {"pause": true}\n\n'
+                return  # Do NOT emit [DONE]; the run continues after user replies
+
         except Exception as e:
             error_occurred = True
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            if active_conv_id and active_conv_id in _pending_runs:
+                del _pending_runs[active_conv_id]
 
         yield "data: [DONE]\n\n"
 
-        # Persist to DB only on successful, non-empty runs.
-        # Executes when the consumer reads past the final [DONE] event.
-        if chunks and not error_occurred:
-            db = SessionLocal()
-            try:
-                db.add(Run(
-                    user_email=current_user["email"],
-                    user_name=current_user["name"],
-                    stream=stream,
-                    faza=faza,
-                    agent_name=config.get("name", f"{stream}/{faza}"),
-                    inputs_json=json.dumps(inputs),
-                    output_markdown="".join(chunks),
-                ))
-                db.commit()
-            except Exception:
-                db.rollback()
-            finally:
-                db.close()
+        # ── Persist to DB on successful completion ────────────────────────────
+        if not error_occurred:
+            prior_output = ""
+            if active_conv_id and active_conv_id in _pending_runs:
+                meta = _pending_runs.pop(active_conv_id)
+                prior_output = meta.get("output_so_far", "")
+            else:
+                # Fallback (should not normally be reached)
+                meta = {
+                    "stream": stream,
+                    "faza": faza,
+                    "user_email": current_user["email"],
+                    "user_name": current_user["name"],
+                    "agent_name": f"{stream}/{faza}",
+                    "inputs_json": json.dumps(inputs),
+                }
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+            full_output = prior_output + "".join(turn_chunks)
+            if full_output:
+                db = SessionLocal()
+                try:
+                    db.add(Run(
+                        user_email=meta["user_email"],
+                        user_name=meta["user_name"],
+                        stream=meta["stream"],
+                        faza=meta["faza"],
+                        agent_name=meta["agent_name"],
+                        inputs_json=meta["inputs_json"],
+                        output_markdown=full_output,
+                    ))
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                finally:
+                    db.close()
+
+    response = StreamingResponse(event_stream(), media_type="text/event-stream")
+    # If the MS token was silently refreshed, bake the new token into the
+    # session cookie so subsequent requests don't re-trigger the refresh.
+    if refreshed_tokens:
+        reissue_session_cookie(
+            response,
+            current_user,
+            refreshed_tokens["access_token"],
+            refreshed_tokens["ms_token_exp"],
+        )
+    return response
 
 
 # ── History endpoints ────────────────────────────────────────────────────────

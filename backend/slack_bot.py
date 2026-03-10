@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 
-from agents import load_registry, stream_agent
+from agents import load_registry, prepare_initial_messages, stream_agent
 from config import settings
 from database import SessionLocal
 from models import Run
@@ -44,7 +44,8 @@ async def _run_and_post(
     """Collect agent output, persist to DB, then post result to Slack."""
     try:
         chunks: list[str] = []
-        async for chunk in stream_agent(stream, faza, inputs, microsoft_token=""):
+        _, messages = await prepare_initial_messages(stream, faza, inputs, microsoft_token="")
+        async for chunk in stream_agent(stream, faza, messages):
             chunks.append(chunk)
         output = "".join(chunks)
 
