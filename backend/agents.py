@@ -217,6 +217,7 @@ async def _stream_anthropic(
         max_tokens=8000,
         system=system_prompt,
         messages=messages,
+        tools=[{"type": "web_search_20250305", "name": "web_search"}],
     ) as s:
         async for text in s.text_stream:
             yield text
