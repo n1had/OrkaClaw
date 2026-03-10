@@ -63,11 +63,17 @@ def _build_user_message(inputs: dict, fields: list) -> str:
     return "\n".join(lines)
 
 
-async def stream_agent(stream: str, faza: str, inputs: dict):
+async def stream_agent(
+    stream: str,
+    faza: str,
+    inputs: dict,
+    microsoft_token: str = "",   # per-user MS Graph token — used in step 6 (Outlook)
+):
     """Async generator yielding text chunks from Claude for any registered agent."""
     config = get_agent_config(stream, faza)
     system_prompt = _build_system_prompt(config)
     user_message = _build_user_message(inputs, config["inputs"])
+    # microsoft_token is available here for Outlook calls in step 6
 
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 

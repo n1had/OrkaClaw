@@ -58,9 +58,11 @@ async def run_agent(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
+    microsoft_token = current_user.get("ms_access_token", "")
+
     async def event_stream():
         try:
-            async for chunk in stream_agent(stream, faza, inputs):
+            async for chunk in stream_agent(stream, faza, inputs, microsoft_token):
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
