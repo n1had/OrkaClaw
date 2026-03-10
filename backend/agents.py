@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -6,6 +7,7 @@ import anthropic
 from google import genai as google_genai
 from google.genai import types as genai_types
 import openai as openai_sdk
+import yaml
 
 from config import settings
 from hubspot import get_hubspot_context
@@ -13,15 +15,103 @@ from outlook import get_outlook_context
 
 BACKEND_DIR = Path(__file__).parent
 REGISTRY_PATH = BACKEND_DIR / "agent_registry.json"
+AGENTS_DIR = BACKEND_DIR / "orka_agents" / "agents"
+REFERENCE_DIR = BACKEND_DIR / "orka_agents" / "reference"
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
 # OpenAI reasoning models use max_completion_tokens instead of max_tokens
 _OPENAI_REASONING_MODELS = {"o1", "o1-mini", "o3", "o3-mini", "o4-mini"}
 
+# Agent filename convention: {stream}_{faza}_*.md  e.g. m1_f1_agent.md
+_AGENT_FILENAME_RE = re.compile(r"^([a-z][a-z0-9]+)_([a-z][a-z0-9]+)_.+\.md$")
+
+
+def _parse_frontmatter(text: str) -> tuple[dict, str]:
+    """Extract YAML frontmatter from the top of an MD file.
+
+    Returns (metadata_dict, body_without_frontmatter).
+    If no frontmatter is found, returns ({}, original text).
+    """
+    if not text.startswith("---"):
+        return {}, text
+    end = text.find("\n---", 3)
+    if end == -1:
+        return {}, text
+    yaml_block = text[3:end].strip()
+    body = text[end + 4:].lstrip("\n")
+    try:
+        meta = yaml.safe_load(yaml_block) or {}
+    except yaml.YAMLError:
+        meta = {}
+    return meta, body
+
+
+def _default_inputs() -> list[dict]:
+    return [{"name": "company_name", "label": "Naziv kompanije", "type": "text", "required": True}]
+
+
+def _discover_agents() -> dict:
+    """Scan orka_agents/agents/ and build a registry from filename + frontmatter."""
+    registry: dict = {}
+    if not AGENTS_DIR.is_dir():
+        return registry
+
+    for md_file in sorted(AGENTS_DIR.glob("*.md")):
+        m = _AGENT_FILENAME_RE.match(md_file.name)
+        if not m:
+            continue
+        stream, faza = m.group(1), m.group(2)
+        text = md_file.read_text(encoding="utf-8")
+        meta, _ = _parse_frontmatter(text)
+
+        # Relative path from backend/ for spec
+        spec_rel = str(md_file.relative_to(BACKEND_DIR))
+
+        # Default references: any reference file prefixed {stream}_{faza}_
+        prefix = f"{stream}_{faza}_"
+        default_refs = []
+        if REFERENCE_DIR.is_dir():
+            default_refs = [
+                str(p.relative_to(BACKEND_DIR))
+                for p in sorted(REFERENCE_DIR.glob(f"{prefix}*.md"))
+            ]
+
+        config = {
+            "name": meta.get("name", f"{stream.upper()} {faza.upper()}"),
+            "spec": spec_rel,
+            "references": meta.get("references", default_refs),
+            "inputs": meta.get("inputs", _default_inputs()),
+            "model": meta.get("model", DEFAULT_MODEL),
+        }
+        # Pass through any extra frontmatter fields (e.g. hubspot_company_field, output_file)
+        for key, value in meta.items():
+            if key not in config:
+                config[key] = value
+
+        registry.setdefault(stream, {})[faza] = config
+
+    return registry
+
 
 def load_registry() -> dict:
-    return json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    """Return merged registry: auto-discovered agents + agent_registry.json overrides.
+
+    agent_registry.json is optional. When present, its entries take precedence
+    over auto-discovered ones (allows manual customisation without touching agent files).
+    """
+    discovered = _discover_agents()
+
+    if not REGISTRY_PATH.exists():
+        return discovered
+
+    overrides = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    # Deep merge: registry.json entries override at the individual agent level
+    for stream, fazas in overrides.items():
+        for faza, config in fazas.items():
+            discovered.setdefault(stream, {})[faza] = config
+
+    return discovered
 
 
 def get_agent_config(stream: str, faza: str) -> dict:
