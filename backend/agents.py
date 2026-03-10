@@ -3,7 +3,8 @@ from pathlib import Path
 from typing import AsyncIterator
 
 import anthropic
-import google.generativeai as genai
+from google import genai as google_genai
+from google.genai import types as genai_types
 import openai as openai_sdk
 
 from config import settings
@@ -131,17 +132,15 @@ async def _stream_openai(
 async def _stream_gemini(
     model: str, system_prompt: str, user_message: str
 ) -> AsyncIterator[str]:
-    genai.configure(api_key=settings.google_api_key)
-    model_obj = genai.GenerativeModel(
-        model_name=model,
-        system_instruction=system_prompt,
-    )
-    response = await model_obj.generate_content_async(
-        user_message,
-        stream=True,
-        generation_config=genai.GenerationConfig(max_output_tokens=8000),
-    )
-    async for chunk in response:
+    client = google_genai.Client(api_key=settings.google_api_key)
+    async for chunk in client.aio.models.generate_content_stream(
+        model=model,
+        contents=user_message,
+        config=genai_types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            max_output_tokens=8000,
+        ),
+    ):
         if chunk.text:
             yield chunk.text
 

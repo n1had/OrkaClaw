@@ -1,6 +1,9 @@
 """Outlook / Microsoft Graph integration — per-user OAuth token."""
 
+import logging
 import httpx
+
+logger = logging.getLogger(__name__)
 
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 _TIMEOUT = 10.0      # seconds per request
@@ -82,8 +85,17 @@ async def get_outlook_context(company_name: str, microsoft_token: str) -> str:
         ])
 
     except httpx.TimeoutException:
+        logger.warning("Outlook request timed out for query %r", company_name)
         return "_(Outlook request timed out)_"
     except httpx.HTTPStatusError as e:
+        logger.error(
+            "Outlook API HTTP %s for query %r — response: %s",
+            e.response.status_code,
+            company_name,
+            e.response.text[:500],
+            exc_info=True,
+        )
         return f"_(Outlook API error: HTTP {e.response.status_code})_"
-    except Exception as e:
-        return f"_(Outlook error: {e})_"
+    except Exception:
+        logger.exception("Unexpected Outlook error for query %r", company_name)
+        return "_(Outlook error — see server logs)_"
