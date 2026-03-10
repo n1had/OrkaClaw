@@ -1,7 +1,7 @@
 import json
 from contextlib import asynccontextmanager
 
-from fastapi import Body, Depends, FastAPI, HTTPException
+from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -10,6 +10,7 @@ from auth import get_current_user, router as auth_router
 from config import settings
 from database import SessionLocal, init_db
 from models import Run
+from slack_bot import handler as slack_handler
 
 
 @asynccontextmanager
@@ -29,6 +30,11 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+
+
+@app.post("/slack/events")
+async def slack_events(req: Request):
+    return await slack_handler.handle(req)
 
 
 @app.get("/health")
