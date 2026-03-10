@@ -37,6 +37,8 @@ app.include_router(auth_router)
 
 @app.post("/slack/events")
 async def slack_events(req: Request):
+    if slack_handler is None:
+        raise HTTPException(status_code=503, detail="Slack bot not configured")
     return await slack_handler.handle(req)
 
 
@@ -68,7 +70,7 @@ def get_registry():
 async def run_agent(
     stream: str,
     faza: str,
-    inputs: dict = Body(default={}),
+    body: dict = Body(default={}),
     current_user: dict = Depends(get_current_user),
 ):
     """Stream agent output as Server-Sent Events. Saves completed run to DB."""
@@ -77,6 +79,10 @@ async def run_agent(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
+    # Extract optional model override; the rest of the body is form inputs
+    model: str | None = body.get("model") or None
+    inputs = {k: v for k, v in body.items() if k != "model"}
+
     microsoft_token = current_user.get("ms_access_token", "")
 
     async def event_stream():
@@ -84,7 +90,7 @@ async def run_agent(
         error_occurred = False
 
         try:
-            async for chunk in stream_agent(stream, faza, inputs, microsoft_token):
+            async for chunk in stream_agent(stream, faza, inputs, microsoft_token, model):
                 chunks.append(chunk)
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:

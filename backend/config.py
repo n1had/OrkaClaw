@@ -1,10 +1,16 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_env_path = Path(__file__).parent.parent / ".env"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=str(_env_path), env_file_encoding="utf-8")
 
     anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    google_api_key: str = ""
     hubspot_private_app_token: str = ""
     microsoft_client_id: str = ""
     microsoft_client_secret: str = ""

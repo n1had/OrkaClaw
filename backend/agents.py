@@ -1,6 +1,10 @@
 import json
-import anthropic
 from pathlib import Path
+from typing import AsyncIterator
+
+import anthropic
+import google.generativeai as genai
+import openai as openai_sdk
 
 from config import settings
 from hubspot import get_hubspot_context
@@ -8,6 +12,11 @@ from outlook import get_outlook_context
 
 BACKEND_DIR = Path(__file__).parent
 REGISTRY_PATH = BACKEND_DIR / "agent_registry.json"
+
+DEFAULT_MODEL = "claude-sonnet-4-6"
+
+# OpenAI reasoning models use max_completion_tokens instead of max_tokens
+_OPENAI_REASONING_MODELS = {"o1", "o1-mini", "o3", "o3-mini", "o4-mini"}
 
 
 def load_registry() -> dict:
@@ -20,6 +29,14 @@ def get_agent_config(stream: str, faza: str) -> dict:
         return registry[stream][faza]
     except KeyError:
         raise ValueError(f"Agent '{stream}/{faza}' nije pronađen u registru")
+
+
+def _detect_provider(model: str) -> str:
+    if model.startswith("claude-"):
+        return "anthropic"
+    if model.startswith("gemini-"):
+        return "gemini"
+    return "openai"  # gpt-*, o3, o4-mini, etc.
 
 
 def _read(relative_path: str) -> str:
@@ -70,22 +87,85 @@ def _build_user_message(
     return "\n".join(lines)
 
 
+# ── Per-provider streaming helpers ────────────────────────────────────────────
+
+async def _stream_anthropic(
+    model: str, system_prompt: str, user_message: str
+) -> AsyncIterator[str]:
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    async with client.messages.stream(
+        model=model,
+        max_tokens=8000,
+        thinking={"type": "adaptive"},
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_message}],
+    ) as s:
+        async for text in s.text_stream:
+            yield text
+
+
+async def _stream_openai(
+    model: str, system_prompt: str, user_message: str
+) -> AsyncIterator[str]:
+    client = openai_sdk.AsyncOpenAI(api_key=settings.openai_api_key)
+    token_kwarg = (
+        {"max_completion_tokens": 8000}
+        if model in _OPENAI_REASONING_MODELS
+        else {"max_tokens": 8000}
+    )
+    stream = await client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        stream=True,
+        **token_kwarg,
+    )
+    async for chunk in stream:
+        content = chunk.choices[0].delta.content
+        if content:
+            yield content
+
+
+async def _stream_gemini(
+    model: str, system_prompt: str, user_message: str
+) -> AsyncIterator[str]:
+    genai.configure(api_key=settings.google_api_key)
+    model_obj = genai.GenerativeModel(
+        model_name=model,
+        system_instruction=system_prompt,
+    )
+    response = await model_obj.generate_content_async(
+        user_message,
+        stream=True,
+        generation_config=genai.GenerationConfig(max_output_tokens=8000),
+    )
+    async for chunk in response:
+        if chunk.text:
+            yield chunk.text
+
+
+# ── Public interface ──────────────────────────────────────────────────────────
+
 async def stream_agent(
     stream: str,
     faza: str,
     inputs: dict,
-    microsoft_token: str = "",   # per-user MS Graph token — used in step 6 (Outlook)
-):
-    """Async generator yielding text chunks from Claude for any registered agent."""
+    microsoft_token: str = "",
+    model: str | None = None,   # overrides registry default
+) -> AsyncIterator[str]:
+    """Async generator yielding text chunks from whichever provider is selected."""
     config = get_agent_config(stream, faza)
+
+    # Resolution order: explicit override → registry default → global default
+    resolved_model = model or config.get("model") or DEFAULT_MODEL
+
     system_prompt = _build_system_prompt(config)
 
-    # HubSpot: use the field name configured in the registry (e.g. "company_name")
     hs_field = config.get("hubspot_company_field", "")
     company_name = inputs.get(hs_field, "") if hs_field else ""
     hubspot_context = await get_hubspot_context(company_name)
-
-    # Outlook: search user's mailbox for emails mentioning the company
     outlook_context = await get_outlook_context(company_name, microsoft_token)
 
     user_message = _build_user_message(
@@ -95,14 +175,14 @@ async def stream_agent(
         outlook_context=outlook_context,
     )
 
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    provider = _detect_provider(resolved_model)
 
-    async with client.messages.stream(
-        model="claude-opus-4-6",
-        max_tokens=8000,
-        thinking={"type": "adaptive"},
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_message}],
-    ) as s:
-        async for text in s.text_stream:
-            yield text
+    if provider == "anthropic":
+        async for chunk in _stream_anthropic(resolved_model, system_prompt, user_message):
+            yield chunk
+    elif provider == "openai":
+        async for chunk in _stream_openai(resolved_model, system_prompt, user_message):
+            yield chunk
+    elif provider == "gemini":
+        async for chunk in _stream_gemini(resolved_model, system_prompt, user_message):
+            yield chunk

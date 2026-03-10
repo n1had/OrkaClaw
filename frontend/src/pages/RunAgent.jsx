@@ -4,6 +4,35 @@ import AgentSelector from '../components/AgentSelector'
 import InputForm from '../components/InputForm'
 import OutputViewer from '../components/OutputViewer'
 
+const DEFAULT_MODEL = 'claude-sonnet-4-6'
+
+const MODEL_GROUPS = [
+  {
+    group: 'Anthropic',
+    models: [
+      { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+      { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+      { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+    ],
+  },
+  {
+    group: 'OpenAI',
+    models: [
+      { value: 'gpt-4o', label: 'GPT-4o' },
+      { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
+      { value: 'o3', label: 'o3' },
+      { value: 'o4-mini', label: 'o4-mini' },
+    ],
+  },
+  {
+    group: 'Google',
+    models: [
+      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    ],
+  },
+]
+
 export default function RunAgent({ user }) {
   const navigate = useNavigate()
 
@@ -13,6 +42,7 @@ export default function RunAgent({ user }) {
   // Selection
   const [selectedStream, setSelectedStream] = useState('')
   const [selectedFaza, setSelectedFaza] = useState('')
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL)
 
   // Inputs
   const [inputs, setInputs] = useState({})
@@ -33,9 +63,10 @@ export default function RunAgent({ user }) {
       .catch(() => setError('Nije moguće učitati registar agenata.'))
   }, [])
 
-  // Reset inputs when agent changes
+  // Reset inputs and model when agent changes
   useEffect(() => {
     setInputs({})
+    setSelectedModel(registry?.[selectedStream]?.[selectedFaza]?.model ?? DEFAULT_MODEL)
   }, [selectedStream, selectedFaza])
 
   const agentConfig =
@@ -63,7 +94,7 @@ export default function RunAgent({ user }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(inputs),
+        body: JSON.stringify({ ...inputs, model: selectedModel }),
       })
 
       if (!response.ok) {
@@ -168,6 +199,25 @@ export default function RunAgent({ user }) {
                 onFazaChange={setSelectedFaza}
               />
             </div>
+
+            {agentConfig && (
+              <div>
+                <div className="section-label">Model</div>
+                <select
+                  className="input-field"
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                >
+                  {MODEL_GROUPS.map(({ group, models }) => (
+                    <optgroup key={group} label={group}>
+                      {models.map((m) => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {agentConfig && (
               <div>
