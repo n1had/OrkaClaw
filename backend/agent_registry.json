@@ -34,6 +34,7 @@
           "required": false
         }
       ],
+      "hubspot_company_field": "company_name",
       "output_file": "m1_f1_forma3.md"
     },
     "f2": {

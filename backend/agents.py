@@ -3,6 +3,8 @@ import anthropic
 from pathlib import Path
 
 from config import settings
+from hubspot import get_hubspot_context
+from outlook import get_outlook_context
 
 BACKEND_DIR = Path(__file__).parent
 REGISTRY_PATH = BACKEND_DIR / "agent_registry.json"
@@ -41,11 +43,16 @@ def _build_system_prompt(config: dict) -> str:
     return "".join(parts)
 
 
-def _build_user_message(inputs: dict, fields: list) -> str:
-    """Format web form inputs into a structured message."""
+def _build_user_message(
+    inputs: dict,
+    fields: list,
+    hubspot_context: str = "",
+    outlook_context: str = "",
+) -> str:
+    """Format web form inputs + CRM/email context into a structured message."""
     lines = []
     for field in fields:
-        name = field["name"]
+        name  = field["name"]
         label = field.get("label", name)
         value = inputs.get(name) or "N/A"
         lines.append(f"**{label}:** {value}")
@@ -53,10 +60,10 @@ def _build_user_message(inputs: dict, fields: list) -> str:
     lines += [
         "",
         "--- HubSpot data ---",
-        "(not yet integrated)",
+        hubspot_context or "_(not yet integrated)_",
         "",
         "--- Outlook data ---",
-        "(not yet integrated)",
+        outlook_context or "_(not yet integrated)_",
         "",
         "Run the agent according to your instructions.",
     ]
@@ -72,8 +79,21 @@ async def stream_agent(
     """Async generator yielding text chunks from Claude for any registered agent."""
     config = get_agent_config(stream, faza)
     system_prompt = _build_system_prompt(config)
-    user_message = _build_user_message(inputs, config["inputs"])
-    # microsoft_token is available here for Outlook calls in step 6
+
+    # HubSpot: use the field name configured in the registry (e.g. "company_name")
+    hs_field = config.get("hubspot_company_field", "")
+    company_name = inputs.get(hs_field, "") if hs_field else ""
+    hubspot_context = await get_hubspot_context(company_name)
+
+    # Outlook: search user's mailbox for emails mentioning the company
+    outlook_context = await get_outlook_context(company_name, microsoft_token)
+
+    user_message = _build_user_message(
+        inputs,
+        config["inputs"],
+        hubspot_context=hubspot_context,
+        outlook_context=outlook_context,
+    )
 
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
