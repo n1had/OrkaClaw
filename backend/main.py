@@ -9,10 +9,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from agents import (
+    filter_registry_for_user,
     get_agent_config,
     load_registry,
     prepare_initial_messages,
     stream_agent,
+    user_can_access_agent,
 )
 from auth import (
     get_current_user,
@@ -73,9 +75,9 @@ def config_check():
 
 
 @app.get("/registry")
-def get_registry():
-    """Return the agent registry so the frontend can build dynamic forms."""
-    return load_registry()
+def get_registry(current_user: dict = Depends(get_current_user)):
+    """Return the agent registry filtered to agents the current user can access."""
+    return filter_registry_for_user(load_registry(), current_user["email"])
 
 
 # ── PAUSE detection helpers ───────────────────────────────────────────────────
@@ -141,11 +143,13 @@ async def run_agent(
 
     # ── Validate ──────────────────────────────────────────────────────────────
     if not messages_from_client:
-        # Initial run — verify the agent exists
+        # Initial run — verify the agent exists and user has access
         try:
-            get_agent_config(stream, faza)
+            agent_cfg = get_agent_config(stream, faza)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
+        if not user_can_access_agent(agent_cfg, current_user["email"]):
+            raise HTTPException(status_code=403, detail="Nemate pristup ovom agentu.")
     else:
         # Continuation — conversation_id must reference a live pending run
         if not conv_id_from_client or conv_id_from_client not in _pending_runs:
@@ -307,6 +311,30 @@ def get_history(current_user: dict = Depends(get_current_user)):
             }
             for r in runs
         ]
+    finally:
+        db.close()
+
+
+@app.get("/history/companies")
+def get_companies(current_user: dict = Depends(get_current_user)):
+    """Return unique company names from the user's runs for autocomplete."""
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(Run.inputs_json)
+            .filter(Run.user_email == current_user["email"])
+            .all()
+        )
+        companies: set[str] = set()
+        for (inputs_json,) in rows:
+            try:
+                inp = json.loads(inputs_json)
+                name = inp.get("company_name", "")
+                if name:
+                    companies.add(name)
+            except Exception:
+                pass
+        return sorted(companies)
     finally:
         db.close()
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import AgentSelector from '../components/AgentSelector'
 import InputForm from '../components/InputForm'
 import OutputViewer from '../components/OutputViewer'
@@ -33,8 +33,27 @@ const MODEL_GROUPS = [
   },
 ]
 
+/** Find the next agent in the same stream that accepts `forma3` as input. */
+function findNextAgent(registry, stream, faza) {
+  if (!registry || !stream || !faza) return null
+  const streamAgents = registry[stream]
+  if (!streamAgents) return null
+  const fazaKeys = Object.keys(streamAgents)
+  const currentIdx = fazaKeys.indexOf(faza)
+  if (currentIdx === -1) return null
+  for (let i = currentIdx + 1; i < fazaKeys.length; i++) {
+    const nextFaza = fazaKeys[i]
+    const nextConfig = streamAgents[nextFaza]
+    if (nextConfig.inputs?.some((f) => f.name === 'forma3')) {
+      return { stream, faza: nextFaza, config: nextConfig }
+    }
+  }
+  return null
+}
+
 export default function RunAgent({ user }) {
   const navigate = useNavigate()
+  const location = useLocation()
 
   // Registry
   const [registry, setRegistry] = useState(null)
@@ -46,6 +65,9 @@ export default function RunAgent({ user }) {
 
   // Inputs
   const [inputs, setInputs] = useState({})
+
+  // Company name autocomplete
+  const [companySuggestions, setCompanySuggestions] = useState([])
 
   // Output
   const [output, setOutput] = useState('')
@@ -63,6 +85,9 @@ export default function RunAgent({ user }) {
   const currentTurnTextRef = useRef('')
   const readerRef = useRef(null)
 
+  // Used to pass inputs through the stream/faza-change effect without wiping them
+  const prefillInputsRef = useRef(null)
+
   // Fetch registry on mount
   useEffect(() => {
     fetch('/registry', { credentials: 'include' })
@@ -71,16 +96,51 @@ export default function RunAgent({ user }) {
       .catch(() => setError('Nije moguće učitati registar agenata.'))
   }, [])
 
+  // Fetch company suggestions once on mount
+  useEffect(() => {
+    fetch('/history/companies', { credentials: 'include' })
+      .then((r) => r.ok ? r.json() : [])
+      .then(setCompanySuggestions)
+      .catch(() => {})
+  }, [])
+
+  // Pre-fill form from navigation state (rerun / chain from dashboard)
+  useEffect(() => {
+    if (!registry || !location.state?.prefill) return
+    const { stream, faza, inputs: prefillInputs, model } = location.state.prefill
+    prefillInputsRef.current = prefillInputs || {}
+    if (model) setSelectedModel(model)
+    setSelectedStream(stream)
+    setSelectedFaza(faza)
+    // Clear navigation state so back-navigation doesn't re-trigger
+    navigate('/run', { replace: true, state: {} })
+  }, [registry]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Reset inputs and model when agent changes
   useEffect(() => {
-    setInputs({})
+    if (prefillInputsRef.current) {
+      setInputs(prefillInputsRef.current)
+      prefillInputsRef.current = null
+    } else {
+      setInputs({})
+    }
     setSelectedModel(registry?.[selectedStream]?.[selectedFaza]?.model ?? DEFAULT_MODEL)
-  }, [selectedStream, selectedFaza])
+  }, [selectedStream, selectedFaza]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const agentConfig =
     registry && selectedStream && selectedFaza
       ? registry[selectedStream]?.[selectedFaza]
       : null
+
+  // Build per-field suggestions map (only for text fields that appear in suggestions)
+  const fieldSuggestions = {}
+  if (agentConfig && companySuggestions.length) {
+    for (const f of agentConfig.inputs) {
+      if (f.type === 'text' && f.name === 'company_name') {
+        fieldSuggestions[f.name] = companySuggestions
+      }
+    }
+  }
 
   // Validate required inputs
   function missingRequired() {
@@ -91,7 +151,6 @@ export default function RunAgent({ user }) {
   }
 
   // ── Shared SSE stream reader ───────────────────────────────────────────────
-  // Handles both initial and continuation requests.  Returns when stream closes.
 
   async function _streamFromBody(body) {
     const response = await fetch(`/run/${selectedStream}/${selectedFaza}`, {
@@ -102,7 +161,6 @@ export default function RunAgent({ user }) {
     })
 
     if (!response.ok) {
-      // Any 401 means the session or MS token has expired — send to login
       if (response.status === 401) {
         window.location.href = '/auth/login'
         return
@@ -124,9 +182,8 @@ export default function RunAgent({ user }) {
 
       buffer += decoder.decode(value, { stream: true })
 
-      // Process all complete SSE lines from the buffer
       const lines = buffer.split('\n')
-      buffer = lines.pop() // keep any incomplete trailing line
+      buffer = lines.pop()
 
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue
@@ -138,15 +195,12 @@ export default function RunAgent({ user }) {
         try {
           const chunk = JSON.parse(data)
           if (typeof chunk === 'string') {
-            // Regular text chunk
             setOutput((prev) => prev + chunk)
             currentTurnTextRef.current += chunk
           } else if (chunk?.type === 'init') {
-            // Initial run: store user message + conversation ID for continuation
             setConvMessages([{ role: 'user', content: chunk.user_message }])
             setConvId(chunk.conversation_id)
           } else if (chunk?.pause) {
-            // PAUSE signal: finalise this turn in history, show reply input
             setConvMessages((prev) => [
               ...prev,
               { role: 'assistant', content: currentTurnTextRef.current },
@@ -189,7 +243,6 @@ export default function RunAgent({ user }) {
   async function handleContinue() {
     if (!pauseInput.trim()) return
 
-    // Append the user's reply to the existing conversation history
     const updatedMessages = [
       ...convMessages,
       { role: 'user', content: pauseInput },
@@ -231,7 +284,22 @@ export default function RunAgent({ user }) {
     setPaused(false)
   }
 
+  function handleChainToNext() {
+    const next = findNextAgent(registry, selectedStream, selectedFaza)
+    if (!next) return
+    navigate('/run', {
+      state: {
+        prefill: {
+          stream: next.stream,
+          faza: next.faza,
+          inputs: { forma3: output },
+        },
+      },
+    })
+  }
+
   const canRun = agentConfig && !running && !missingRequired()
+  const nextAgent = done && output ? findNextAgent(registry, selectedStream, selectedFaza) : null
 
   return (
     <div className="shell">
@@ -296,6 +364,7 @@ export default function RunAgent({ user }) {
                   fields={agentConfig.inputs}
                   values={inputs}
                   onChange={setInputs}
+                  suggestions={fieldSuggestions}
                 />
               </div>
             )}
@@ -345,16 +414,23 @@ export default function RunAgent({ user }) {
                     'Output'
                   )}
                 </h2>
-                {done && output && (
-                  <button className="btn btn-ghost" onClick={handleDownload}>
-                    ↓ Preuzmi MD
-                  </button>
-                )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {done && output && (
+                    <button className="btn btn-ghost" onClick={handleDownload}>
+                      ↓ Preuzmi MD
+                    </button>
+                  )}
+                  {nextAgent && (
+                    <button className="btn btn-primary" onClick={handleChainToNext}>
+                      Pokreni {nextAgent.config.name} →
+                    </button>
+                  )}
+                </div>
               </div>
 
               <OutputViewer content={output} streaming={running} />
 
-              {/* PAUSE reply area — shown when agent is waiting for user input */}
+              {/* PAUSE reply area */}
               {paused && (
                 <div className="pause-input-area">
                   <div className="pause-label">Agent čeka vaš odgovor</div>

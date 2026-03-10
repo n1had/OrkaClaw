@@ -114,6 +114,30 @@ def load_registry() -> dict:
     return discovered
 
 
+def user_can_access_agent(config: dict, user_email: str) -> bool:
+    """Return True if user_email is allowed to access this agent.
+
+    An agent is accessible to everyone when `allowed_users` is absent or empty.
+    When `allowed_users` is a non-empty list, only listed emails may access it.
+    Comparison is case-insensitive.
+    """
+    allowed: list = config.get("allowed_users") or []
+    if not allowed:
+        return True
+    email_lower = user_email.lower()
+    return any(e.lower() == email_lower for e in allowed)
+
+
+def filter_registry_for_user(registry: dict, user_email: str) -> dict:
+    """Return a copy of the registry with only agents accessible to user_email."""
+    filtered: dict = {}
+    for stream, fazas in registry.items():
+        for faza, config in fazas.items():
+            if user_can_access_agent(config, user_email):
+                filtered.setdefault(stream, {})[faza] = config
+    return filtered
+
+
 def get_agent_config(stream: str, faza: str) -> dict:
     registry = load_registry()
     try:

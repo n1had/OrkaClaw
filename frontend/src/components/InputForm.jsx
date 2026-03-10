@@ -1,4 +1,4 @@
-export default function InputForm({ fields, values, onChange }) {
+export default function InputForm({ fields, values, onChange, suggestions = {} }) {
   function set(name, value) {
     onChange((prev) => ({ ...prev, [name]: value }))
   }
@@ -32,12 +32,22 @@ export default function InputForm({ fields, values, onChange }) {
               placeholder={field.required ? 'Obavezno polje' : 'Opcionalno'}
             />
           ) : (
-            <input
-              type="text"
-              value={values[field.name] || ''}
-              onChange={(e) => set(field.name, e.target.value)}
-              placeholder={field.required ? 'Obavezno polje' : 'Opcionalno'}
-            />
+            <>
+              <input
+                type="text"
+                list={suggestions[field.name]?.length ? `dl-${field.name}` : undefined}
+                value={values[field.name] || ''}
+                onChange={(e) => set(field.name, e.target.value)}
+                placeholder={field.required ? 'Obavezno polje' : 'Opcionalno'}
+              />
+              {suggestions[field.name]?.length > 0 && (
+                <datalist id={`dl-${field.name}`}>
+                  {suggestions[field.name].map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              )}
+            </>
           )}
         </div>
       ))}

@@ -2,9 +2,28 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 
+/** Find the next agent in the same stream that accepts `forma3` as input. */
+function findNextAgent(registry, stream, faza) {
+  if (!registry || !stream || !faza) return null
+  const streamAgents = registry[stream]
+  if (!streamAgents) return null
+  const fazaKeys = Object.keys(streamAgents)
+  const currentIdx = fazaKeys.indexOf(faza)
+  if (currentIdx === -1) return null
+  for (let i = currentIdx + 1; i < fazaKeys.length; i++) {
+    const nextFaza = fazaKeys[i]
+    const nextConfig = streamAgents[nextFaza]
+    if (nextConfig.inputs?.some((f) => f.name === 'forma3')) {
+      return { stream, faza: nextFaza, config: nextConfig }
+    }
+  }
+  return null
+}
+
 export default function Dashboard({ user }) {
   const navigate = useNavigate()
 
+  const [registry, setRegistry] = useState(null)
   const [runs, setRuns] = useState(null)        // null = loading, [] = empty
   const [histError, setHistError] = useState('')
   const [selected, setSelected] = useState(null) // full run object for modal
@@ -15,6 +34,10 @@ export default function Dashboard({ user }) {
       .then((r) => r.json())
       .then(setRuns)
       .catch(() => setHistError('Nije moguće učitati historiju.'))
+    fetch('/registry', { credentials: 'include' })
+      .then((r) => r.ok ? r.json() : null)
+      .then(setRegistry)
+      .catch(() => {})
   }, [])
 
   async function openRun(id) {
@@ -121,10 +144,47 @@ export default function Dashboard({ user }) {
                 <div className="history-modal-title">{selected.agent_name}</div>
                 <div className="history-modal-meta">{formatDate(selected.created_at)}</div>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
                 <button className="btn btn-ghost" onClick={() => downloadRun(selected)}>
                   ↓ Preuzmi MD
                 </button>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    navigate('/run', {
+                      state: {
+                        prefill: {
+                          stream: selected.stream,
+                          faza: selected.faza,
+                          inputs: selected.inputs,
+                        },
+                      },
+                    })
+                  }}
+                >
+                  ↺ Pokreni ponovo
+                </button>
+                {findNextAgent(registry, selected.stream, selected.faza) && (() => {
+                  const next = findNextAgent(registry, selected.stream, selected.faza)
+                  return (
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => {
+                        navigate('/run', {
+                          state: {
+                            prefill: {
+                              stream: next.stream,
+                              faza: next.faza,
+                              inputs: { forma3: selected.output_markdown },
+                            },
+                          },
+                        })
+                      }}
+                    >
+                      Pokreni {next.config.name} →
+                    </button>
+                  )
+                })()}
                 <button className="btn btn-ghost" onClick={() => setSelected(null)}>
                   ✕
                 </button>
