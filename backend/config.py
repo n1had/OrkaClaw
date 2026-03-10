@@ -14,5 +14,17 @@ class Settings(BaseSettings):
     secret_key: str = "changeme"
     database_url: str = "sqlite:///./orka.db"
 
+    # Auth redirect — must match the registered redirect URI in Azure AD app registration
+    redirect_uri: str = "http://localhost:8000/auth/callback"
+
+    # Where the frontend is served from — used for post-auth redirects
+    # In production: same as backend URL (e.g. https://orka.azurecontainerapps.io)
+    # In development: Vite dev server (http://localhost:5173)
+    frontend_url: str = "http://localhost:5173"
+
+    # Comma-separated list of allowed CORS origins
+    # In production on Azure (FastAPI serves the frontend): can be same as backend URL
+    cors_origins: str = "http://localhost:5173"
+
 
 settings = Settings()

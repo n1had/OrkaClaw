@@ -1,9 +1,11 @@
 import json
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from agents import get_agent_config, load_registry, stream_agent
 from auth import get_current_user, router as auth_router
@@ -21,9 +23,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="OrkaAgentInterface", version="0.1.0", lifespan=lifespan)
 
+_cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite dev server
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -165,3 +168,26 @@ def get_run(run_id: int, current_user: dict = Depends(get_current_user)):
         }
     finally:
         db.close()
+
+
+# ── Production: serve the built React SPA ────────────────────────────────────
+# When `backend/static/` exists (Dockerfile copies `frontend/dist` there),
+# FastAPI serves the frontend from the same origin — no separate web server needed.
+
+_STATIC_DIR = Path(__file__).parent / "static"
+
+if _STATIC_DIR.is_dir():
+    _assets_dir = _STATIC_DIR / "assets"
+    if _assets_dir.is_dir():
+        # Serve hashed JS/CSS bundles
+        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="static-assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        """Catch-all: serve index.html for any path not matched by the API above."""
+        # Serve exact static files (favicon.ico, etc.) when they exist
+        target = (_STATIC_DIR / full_path).resolve()
+        static_root = _STATIC_DIR.resolve()
+        if target.is_relative_to(static_root) and target.is_file():
+            return FileResponse(str(target))
+        return FileResponse(str(_STATIC_DIR / "index.html"))
