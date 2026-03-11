@@ -6,33 +6,6 @@ import OutputViewer from '../components/OutputViewer'
 
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
 
-const MODEL_GROUPS = [
-  {
-    group: 'Anthropic',
-    models: [
-      { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-      { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
-      { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-    ],
-  },
-  {
-    group: 'OpenAI',
-    models: [
-      { value: 'gpt-4o', label: 'GPT-4o' },
-      { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
-      { value: 'o3', label: 'o3' },
-      { value: 'o4-mini', label: 'o4-mini' },
-    ],
-  },
-  {
-    group: 'Google',
-    models: [
-      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    ],
-  },
-]
-
 /** Find the next agent in the same stream that accepts `forma3` as input. */
 function findNextAgent(registry, stream, faza) {
   if (!registry || !stream || !faza) return null
@@ -57,6 +30,7 @@ export default function RunAgent({ user }) {
 
   // Registry
   const [registry, setRegistry] = useState(null)
+  const [models, setModels] = useState([])
 
   // Selection
   const [selectedStream, setSelectedStream] = useState('')
@@ -94,6 +68,20 @@ export default function RunAgent({ user }) {
       .then((r) => r.json())
       .then(setRegistry)
       .catch(() => setError('Nije moguće učitati registar agenata.'))
+  }, [])
+
+  useEffect(() => {
+    async function loadModels() {
+      try {
+        const res = await fetch('/models', { credentials: 'include' })
+        const data = await res.json()
+        setModels(data.models || [])
+      } catch {
+        setError('Nije moguće učitati listu modela.')
+      }
+    }
+
+    loadModels()
   }, [])
 
   // Fetch company suggestions once on mount
@@ -346,12 +334,8 @@ export default function RunAgent({ user }) {
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
                 >
-                  {MODEL_GROUPS.map(({ group, models }) => (
-                    <optgroup key={group} label={group}>
-                      {models.map((m) => (
-                        <option key={m.value} value={m.value}>{m.label}</option>
-                      ))}
-                    </optgroup>
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>{m.id}</option>
                   ))}
                 </select>
               </div>

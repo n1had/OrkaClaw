@@ -1,4 +1,4 @@
-# OrkaAgentInterface — Build Spec v1.0
+# Orka Claw — Build Spec v1.0
 
 ## Overview
 A web platform and Slack bot that allows Orka team members to run AI agents (m1 f1, m1 f2, and future agents) through a unified interface. Users authenticate with Microsoft 365. Each agent run takes structured input, calls Claude API with the appropriate agent spec, and returns output in the browser and as a downloadable MD file.

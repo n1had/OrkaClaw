@@ -1,4 +1,4 @@
-# OrkaAgentInterface — Backlog
+# Orka Claw — Backlog
 
 ## Priority 1 — PAUSE points in F2 agent
 **Problem:** F2 agent has defined PAUSE points where it waits for human input before continuing (after Step 3, Step 7, Step 8). The current UI streams output but has no way to receive mid-run input — the agent can't pause and wait.

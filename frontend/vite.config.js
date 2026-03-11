@@ -5,10 +5,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/auth': 'http://localhost:8000',
-      '/registry': 'http://localhost:8000',
+      '/auth': 'http://127.0.0.1:8000',
+      '/models': 'http://127.0.0.1:8000',
+      '/registry': 'http://127.0.0.1:8000',
       '/run': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         // Disable response buffering so SSE events arrive immediately
         configure: (proxy) => {
@@ -17,8 +18,8 @@ export default defineConfig({
           })
         },
       },
-      '/health': 'http://localhost:8000',
-      '/history': 'http://localhost:8000',
+      '/health': 'http://127.0.0.1:8000',
+      '/history': 'http://127.0.0.1:8000',
     },
   },
 })

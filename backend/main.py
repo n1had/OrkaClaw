@@ -25,7 +25,7 @@ from auth import (
 )
 from config import settings
 from database import SessionLocal, init_db
-from models import Run
+from models import AVAILABLE_MODELS, Run
 from slack_bot import handler as slack_handler
 
 
@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="OrkaAgentInterface", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="OrkaClaw", version="0.1.0", lifespan=lifespan)
 
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
@@ -78,6 +78,11 @@ def config_check():
 def get_registry(current_user: dict = Depends(get_current_user)):
     """Return the agent registry filtered to agents the current user can access."""
     return filter_registry_for_user(load_registry(), current_user["email"])
+
+
+@app.get("/models")
+def get_models():
+    return {"models": AVAILABLE_MODELS}
 
 
 # ── PAUSE detection helpers ───────────────────────────────────────────────────

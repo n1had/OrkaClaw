@@ -11,6 +11,7 @@ import yaml
 
 from config import settings
 from hubspot import get_hubspot_context
+from models import get_provider_for_model
 from outlook import get_outlook_context
 
 BACKEND_DIR = Path(__file__).parent
@@ -146,14 +147,6 @@ def get_agent_config(stream: str, faza: str) -> dict:
         raise ValueError(f"Agent '{stream}/{faza}' nije pronađen u registru")
 
 
-def _detect_provider(model: str) -> str:
-    if model.startswith("claude-"):
-        return "anthropic"
-    if model.startswith("gemini-"):
-        return "gemini"
-    return "openai"  # gpt-*, o3, o4-mini, etc.
-
-
 def _read(relative_path: str) -> str:
     return (BACKEND_DIR / relative_path).read_text(encoding="utf-8")
 
@@ -227,6 +220,36 @@ async def _stream_openai(
     model: str, system_prompt: str, messages: list[dict]
 ) -> AsyncIterator[str]:
     client = openai_sdk.AsyncOpenAI(api_key=settings.openai_api_key)
+    async for chunk in _execute_openai_request(client, model, system_prompt, messages):
+        yield chunk
+
+
+def _openai_api_method(model: str) -> str:
+    return "responses" if model.startswith("gpt-5") else "chat_completions"
+
+
+def _build_openai_responses_input(system_prompt: str, messages: list[dict]) -> str:
+    lines = [f"System:\n{system_prompt}"]
+    for message in messages:
+        role = message.get("role", "user").capitalize()
+        content = message.get("content", "")
+        lines.append(f"{role}:\n{content}")
+    return "\n\n".join(lines)
+
+
+async def _execute_openai_request(
+    client: openai_sdk.AsyncOpenAI,
+    model: str,
+    system_prompt: str,
+    messages: list[dict],
+) -> AsyncIterator[str]:
+    if _openai_api_method(model) == "responses":
+        prompt = _build_openai_responses_input(system_prompt, messages)
+        resp = await client.responses.create(model=model, input=prompt)
+        if resp.output_text:
+            yield resp.output_text
+        return
+
     token_kwarg = (
         {"max_completion_tokens": 8000}
         if model in _OPENAI_REASONING_MODELS
@@ -312,7 +335,7 @@ async def stream_agent(
     resolved_model = model or config.get("model") or DEFAULT_MODEL
 
     system_prompt = _build_system_prompt(config)
-    provider = _detect_provider(resolved_model)
+    provider = get_provider_for_model(resolved_model)
 
     if provider == "anthropic":
         async for chunk in _stream_anthropic(resolved_model, system_prompt, messages):
@@ -323,3 +346,5 @@ async def stream_agent(
     elif provider == "gemini":
         async for chunk in _stream_gemini(resolved_model, system_prompt, messages):
             yield chunk
+    else:
+        raise ValueError(f"Unsupported provider '{provider}' for model '{resolved_model}'.")

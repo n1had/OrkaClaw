@@ -1,11 +1,13 @@
-# OrkaAgentInterface
+# Orka Claw
 
 ## What this is
 A web platform and Slack bot that allows Orka team members to run AI agents through a unified interface. Users authenticate with Microsoft 365 (orka-global.com accounts only). Each agent run takes structured input, calls an AI API, and returns output in the browser and as a downloadable MD file.
 
 ## Project structure
 ```
-OrkaAgentInterface/
+OrkaClaw/
+├── AGENTS.md                # Durable agent handoff and repo context
+├── CLAUDE.md                # Claude-facing quickstart and repo summary
 ├── backend/
 │   ├── main.py              # FastAPI app, all endpoints
 │   ├── auth.py              # Microsoft Azure AD OAuth flow
@@ -31,6 +33,9 @@ OrkaAgentInterface/
 │           ├── AgentSelector.jsx
 │           ├── InputForm.jsx
 │           └── OutputViewer.jsx
+├── docs/
+│   ├── WORKFLOW.md          # Change-making rules and ADR trigger
+│   └── DECISIONS.md         # Architecture Decision Records
 ├── BACKLOG.md               # Prioritized feature backlog
 ├── SPEC.md                  # Original build specification
 └── .env                     # Never commit — see .env.example
@@ -51,6 +56,8 @@ npm run dev
 ```
 
 Frontend runs on `http://localhost:5173`, proxies API calls to `http://localhost:8000`.
+
+Local frontend-to-backend API calls require matching Vite proxy coverage for new endpoints.
 
 ## Environment variables
 See `.env.example` for all required variables. Key ones:
@@ -79,10 +86,11 @@ git submodule update --remote
 - User's Microsoft token is stored in session and used for Outlook calls
 
 ## Multi-provider AI
-`agents.py` detects provider from model name prefix:
-- `claude-` → Anthropic
-- `gpt-` or `o` → OpenAI
-- `gemini-` → Google Gemini
+Model selection is controlled by the backend registry in `backend/models.py`.
+Frontend fetches models from `GET /models`.
+Provider routing is explicit and defined per model.
+OpenAI execution is centralized and model-family-specific in `backend/agents.py`.
+GPT-5 uses the Responses API.
 
 ## Database
 SQLite locally (`backend/orka.db`). Tables created automatically on startup. Each run saved with user email, agent info, inputs, and full markdown output.
@@ -92,3 +100,12 @@ SQLite locally (`backend/orka.db`). Tables created automatically on startup. Eac
 - Agent specs are read-only in this repo — edit them in OrkaAgents repo
 - All `/run` endpoints require valid Azure AD session
 - Slack bot is optional — app starts normally without Slack tokens
+
+## Workflow and decisions
+See `docs/WORKFLOW.md` for branching, change-making conventions, and when to write an Architecture Decision Record.
+ADRs live in `docs/DECISIONS.md`.
+
+## Harness use
+`AGENTS.md` is the shared handoff document for coding agents in this repo.
+`CLAUDE.md` is the Claude-specific quick reference.
+Both harnesses follow the same workflow rules in `docs/WORKFLOW.md` and record architecture decisions in `docs/DECISIONS.md`.
