@@ -369,6 +369,83 @@ def get_run(run_id: int, current_user: dict = Depends(get_current_user)):
         db.close()
 
 
+# ── Compiler endpoints (WorkflowAgents via Claude Agent SDK) ─────────────────
+
+from compiler import stream_compiler
+
+_WORKFLOW_AGENT_DIR = Path(__file__).parent.parent / settings.workflow_agent_repo_path
+
+
+@app.post("/compile/{procedure_id}")
+async def compile_owis(
+    procedure_id: str,
+    body: dict = Body(default={}),
+    current_user: dict = Depends(get_current_user),
+):
+    """Compile an OWIS export into a WCM via the WorkflowAgents compiler."""
+    owis_export = body.get("owis_export")
+    if not owis_export:
+        raise HTTPException(status_code=422, detail="owis_export is required")
+    model: str | None = body.get("model") or None
+
+    # Write OWIS export to the WorkflowAgents inputs directory
+    inputs_dir = _WORKFLOW_AGENT_DIR / "inputs" / "owis"
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    owis_path = inputs_dir / f"{procedure_id}.json"
+    owis_path.write_text(json.dumps(owis_export, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    prompt = (
+        "Read CLAUDE.md. Compile the OWIS export at "
+        f"inputs/owis/{procedure_id}.json into a WCM. Follow the compiler pipeline: "
+        "owis_adapter → normalizer. Write output to "
+        f"outputs/wcm/{procedure_id}.json and "
+        f"outputs/reports/{procedure_id}-gap-report.md."
+    )
+
+    async def event_stream():
+        try:
+            async for chunk in stream_compiler(prompt, model):
+                yield f"data: {json.dumps(chunk)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/generate/docs/{procedure_id}")
+async def generate_docs(
+    procedure_id: str,
+    body: dict = Body(default={}),
+    current_user: dict = Depends(get_current_user),
+):
+    """Generate documentation from a compiled WCM."""
+    model: str | None = body.get("model") or None
+
+    wcm_path = _WORKFLOW_AGENT_DIR / "outputs" / "wcm" / f"{procedure_id}.json"
+    if not wcm_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"WCM not found for procedure {procedure_id}. Run /compile first.",
+        )
+
+    prompt = (
+        "Read CLAUDE.md. Run agents/generators/docs_generator.md against "
+        f"outputs/wcm/{procedure_id}.json. Write output to "
+        f"outputs/docs/{procedure_id}-v1.md."
+    )
+
+    async def event_stream():
+        try:
+            async for chunk in stream_compiler(prompt, model):
+                yield f"data: {json.dumps(chunk)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 # ── Production: serve the built React SPA ────────────────────────────────────
 # When `backend/static/` exists (Dockerfile copies `frontend/dist` there),
 # FastAPI serves the frontend from the same origin — no separate web server needed.

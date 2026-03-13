@@ -1,3 +1,6 @@
 [submodule "backend/orka_agents"]
 	path = backend/orka_agents
 	url = https://github.com/n1had/OrkaAgents
+[submodule "backend/workflow_agent"]
+	path = backend/workflow_agent
+	url = https://github.com/n1had/WorkflowAgent

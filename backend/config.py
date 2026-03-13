@@ -32,5 +32,8 @@ class Settings(BaseSettings):
     # In production on Azure (FastAPI serves the frontend): can be same as backend URL
     cors_origins: str = "http://localhost:5173"
 
+    # Path to WorkflowAgents submodule (relative to OrkaClaw root)
+    workflow_agent_repo_path: str = "backend/workflow_agent"
+
 
 settings = Settings()

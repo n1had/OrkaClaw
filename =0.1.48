@@ -1,0 +1,78 @@
+Collecting claude-agent-sdk
+  Obtaining dependency information for claude-agent-sdk from https://files.pythonhosted.org/packages/c3/cf/bbbdee52ee0c63c8709b0ac03ce3c1da5bdc37def5da0eca63363448744f/claude_agent_sdk-0.1.48-py3-none-macosx_11_0_arm64.whl.metadata
+  Downloading claude_agent_sdk-0.1.48-py3-none-macosx_11_0_arm64.whl.metadata (12 kB)
+Requirement already satisfied: anyio>=4.0.0 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from claude-agent-sdk) (4.12.1)
+Collecting mcp>=0.1.0 (from claude-agent-sdk)
+  Obtaining dependency information for mcp>=0.1.0 from https://files.pythonhosted.org/packages/fd/d9/eaa1f80170d2b7c5ba23f3b59f766f3a0bb41155fbc32a69adfa1adaaef9/mcp-1.26.0-py3-none-any.whl.metadata
+  Downloading mcp-1.26.0-py3-none-any.whl.metadata (89 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 89.5/89.5 kB 1.5 MB/s eta 0:00:00
+Requirement already satisfied: idna>=2.8 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from anyio>=4.0.0->claude-agent-sdk) (3.4)
+Requirement already satisfied: typing_extensions>=4.5 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from anyio>=4.0.0->claude-agent-sdk) (4.15.0)
+Collecting httpx-sse>=0.4 (from mcp>=0.1.0->claude-agent-sdk)
+  Obtaining dependency information for httpx-sse>=0.4 from https://files.pythonhosted.org/packages/d2/fd/6668e5aec43ab844de6fc74927e155a3b37bf40d7c3790e49fc0406b6578/httpx_sse-0.4.3-py3-none-any.whl.metadata
+  Downloading httpx_sse-0.4.3-py3-none-any.whl.metadata (9.7 kB)
+Requirement already satisfied: httpx>=0.27.1 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from mcp>=0.1.0->claude-agent-sdk) (0.28.1)
+Collecting jsonschema>=4.20.0 (from mcp>=0.1.0->claude-agent-sdk)
+  Obtaining dependency information for jsonschema>=4.20.0 from https://files.pythonhosted.org/packages/69/90/f63fb5873511e014207a475e2bb4e8b2e570d655b00ac19a9a0ca0a385ee/jsonschema-4.26.0-py3-none-any.whl.metadata
+  Downloading jsonschema-4.26.0-py3-none-any.whl.metadata (7.6 kB)
+Requirement already satisfied: pydantic-settings>=2.5.2 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from mcp>=0.1.0->claude-agent-sdk) (2.7.0)
+Requirement already satisfied: pydantic<3.0.0,>=2.11.0 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from mcp>=0.1.0->claude-agent-sdk) (2.12.5)
+Requirement already satisfied: pyjwt[crypto]>=2.10.1 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from mcp>=0.1.0->claude-agent-sdk) (2.10.1)
+Collecting python-multipart>=0.0.9 (from mcp>=0.1.0->claude-agent-sdk)
+  Obtaining dependency information for python-multipart>=0.0.9 from https://files.pythonhosted.org/packages/1b/d0/397f9626e711ff749a95d96b7af99b9c566a9bb5129b8e4c10fc4d100304/python_multipart-0.0.22-py3-none-any.whl.metadata
+  Downloading python_multipart-0.0.22-py3-none-any.whl.metadata (1.8 kB)
+Collecting sse-starlette>=1.6.1 (from mcp>=0.1.0->claude-agent-sdk)
+  Obtaining dependency information for sse-starlette>=1.6.1 from https://files.pythonhosted.org/packages/61/28/8cb142d3fe80c4a2d8af54ca0b003f47ce0ba920974e7990fa6e016402d1/sse_starlette-3.3.2-py3-none-any.whl.metadata
+  Downloading sse_starlette-3.3.2-py3-none-any.whl.metadata (14 kB)
+Requirement already satisfied: starlette>=0.27 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from mcp>=0.1.0->claude-agent-sdk) (0.41.3)
+Requirement already satisfied: typing-inspection>=0.4.1 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from mcp>=0.1.0->claude-agent-sdk) (0.4.2)
+Requirement already satisfied: uvicorn>=0.31.1 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from mcp>=0.1.0->claude-agent-sdk) (0.32.1)
+Requirement already satisfied: certifi in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from httpx>=0.27.1->mcp>=0.1.0->claude-agent-sdk) (2023.7.22)
+Requirement already satisfied: httpcore==1.* in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from httpx>=0.27.1->mcp>=0.1.0->claude-agent-sdk) (1.0.9)
+Requirement already satisfied: h11>=0.16 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from httpcore==1.*->httpx>=0.27.1->mcp>=0.1.0->claude-agent-sdk) (0.16.0)
+Requirement already satisfied: attrs>=22.2.0 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from jsonschema>=4.20.0->mcp>=0.1.0->claude-agent-sdk) (23.1.0)
+Collecting jsonschema-specifications>=2023.03.6 (from jsonschema>=4.20.0->mcp>=0.1.0->claude-agent-sdk)
+  Obtaining dependency information for jsonschema-specifications>=2023.03.6 from https://files.pythonhosted.org/packages/41/45/1a4ed80516f02155c51f51e8cedb3c1902296743db0bbc66608a0db2814f/jsonschema_specifications-2025.9.1-py3-none-any.whl.metadata
+  Downloading jsonschema_specifications-2025.9.1-py3-none-any.whl.metadata (2.9 kB)
+Collecting referencing>=0.28.4 (from jsonschema>=4.20.0->mcp>=0.1.0->claude-agent-sdk)
+  Obtaining dependency information for referencing>=0.28.4 from https://files.pythonhosted.org/packages/2c/58/ca301544e1fa93ed4f80d724bf5b194f6e4b945841c5bfd555878eea9fcb/referencing-0.37.0-py3-none-any.whl.metadata
+  Downloading referencing-0.37.0-py3-none-any.whl.metadata (2.8 kB)
+Collecting rpds-py>=0.25.0 (from jsonschema>=4.20.0->mcp>=0.1.0->claude-agent-sdk)
+  Obtaining dependency information for rpds-py>=0.25.0 from https://files.pythonhosted.org/packages/94/ba/24e5ebb7c1c82e74c4e4f33b2112a5573ddc703915b13a073737b59b86e0/rpds_py-0.30.0-cp311-cp311-macosx_11_0_arm64.whl.metadata
+  Downloading rpds_py-0.30.0-cp311-cp311-macosx_11_0_arm64.whl.metadata (4.1 kB)
+Requirement already satisfied: annotated-types>=0.6.0 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from pydantic<3.0.0,>=2.11.0->mcp>=0.1.0->claude-agent-sdk) (0.7.0)
+Requirement already satisfied: pydantic-core==2.41.5 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from pydantic<3.0.0,>=2.11.0->mcp>=0.1.0->claude-agent-sdk) (2.41.5)
+Requirement already satisfied: python-dotenv>=0.21.0 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from pydantic-settings>=2.5.2->mcp>=0.1.0->claude-agent-sdk) (1.0.1)
+Requirement already satisfied: cryptography>=3.4.0 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from pyjwt[crypto]>=2.10.1->mcp>=0.1.0->claude-agent-sdk) (45.0.7)
+Collecting starlette>=0.27 (from mcp>=0.1.0->claude-agent-sdk)
+  Obtaining dependency information for starlette>=0.27 from https://files.pythonhosted.org/packages/81/0d/13d1d239a25cbfb19e740db83143e95c772a1fe10202dda4b76792b114dd/starlette-0.52.1-py3-none-any.whl.metadata
+  Downloading starlette-0.52.1-py3-none-any.whl.metadata (6.3 kB)
+Requirement already satisfied: click>=7.0 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from uvicorn>=0.31.1->mcp>=0.1.0->claude-agent-sdk) (8.3.1)
+Requirement already satisfied: cffi>=1.14 in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from cryptography>=3.4.0->pyjwt[crypto]>=2.10.1->mcp>=0.1.0->claude-agent-sdk) (2.0.0)
+Requirement already satisfied: pycparser in /Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages (from cffi>=1.14->cryptography>=3.4.0->pyjwt[crypto]>=2.10.1->mcp>=0.1.0->claude-agent-sdk) (3.0)
+Downloading claude_agent_sdk-0.1.48-py3-none-macosx_11_0_arm64.whl (57.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 57.6/57.6 MB 20.4 MB/s eta 0:00:00
+Downloading mcp-1.26.0-py3-none-any.whl (233 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 233.6/233.6 kB 16.3 MB/s eta 0:00:00
+Downloading httpx_sse-0.4.3-py3-none-any.whl (9.0 kB)
+Downloading jsonschema-4.26.0-py3-none-any.whl (90 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 90.6/90.6 kB 9.5 MB/s eta 0:00:00
+Downloading python_multipart-0.0.22-py3-none-any.whl (24 kB)
+Downloading sse_starlette-3.3.2-py3-none-any.whl (14 kB)
+Downloading starlette-0.52.1-py3-none-any.whl (74 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 74.3/74.3 kB 8.3 MB/s eta 0:00:00
+Downloading jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+Downloading referencing-0.37.0-py3-none-any.whl (26 kB)
+Downloading rpds_py-0.30.0-cp311-cp311-macosx_11_0_arm64.whl (359 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 359.7/359.7 kB 13.7 MB/s eta 0:00:00
+Installing collected packages: rpds-py, python-multipart, httpx-sse, starlette, referencing, sse-starlette, jsonschema-specifications, jsonschema, mcp, claude-agent-sdk
+  Attempting uninstall: starlette
+    Found existing installation: starlette 0.41.3
+    Uninstalling starlette-0.41.3:
+      Successfully uninstalled starlette-0.41.3
+ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+fastapi 0.115.6 requires starlette<0.42.0,>=0.40.0, but you have starlette 0.52.1 which is incompatible.
+Successfully installed claude-agent-sdk-0.1.48 httpx-sse-0.4.3 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 mcp-1.26.0 python-multipart-0.0.22 referencing-0.37.0 rpds-py-0.30.0 sse-starlette-3.3.2 starlette-0.52.1
+
+[notice] A new release of pip is available: 23.2.1 -> 26.0.1
+[notice] To update, run: pip install --upgrade pip
